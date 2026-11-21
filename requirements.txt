@@ -1,0 +1,7 @@
+numpy
+opencv-python
+pycocotools
+scipy
+torch
+ultralytics          # YOLO-seg (lightweight model)
+# SAM 2: pip install git+https://github.com/facebookresearch/sam2.git
