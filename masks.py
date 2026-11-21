@@ -45,8 +45,15 @@ def iou(a: np.ndarray, b: np.ndarray) -> float:
     return float(np.logical_and(a, b).sum() / union) if union else 0.0
 
 
+def zone_pixels(zone: list[list[float]], h: int, w: int) -> list[list[float]]:
+    """Zones may be given in pixels or in relative coordinates (all values in [0, 1])."""
+    if all(0 <= v <= 1 for pt in zone for v in pt):
+        return [[x * w, y * h] for x, y in zone]
+    return zone
+
+
 def zone_mask(zone: list[list[float]], h: int, w: int) -> np.ndarray:
-    return polygon_to_mask([sum(zone, [])], h, w)
+    return polygon_to_mask([sum(zone_pixels(zone, h, w), [])], h, w)
 
 
 def fraction_in_zone(obj: np.ndarray, zone: np.ndarray) -> float:

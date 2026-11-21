@@ -1,0 +1,30 @@
+{
+  "bbox_only": {
+    "objects": 490,
+    "mean_iou": 0.5716,
+    "zone_accuracy": 0.9531,
+    "decisions_changed_vs_bbox": null,
+    "ms_per_image": null
+  },
+  "yolo_seg": {
+    "objects": 490,
+    "mean_iou": 0.6556,
+    "zone_accuracy": 0.9429,
+    "decisions_changed_vs_bbox": 37,
+    "ms_per_image": 37.2
+  },
+  "sam2_gt": {
+    "objects": 490,
+    "mean_iou": 0.8202,
+    "zone_accuracy": 0.9898,
+    "decisions_changed_vs_bbox": 26,
+    "ms_per_image": 168.3
+  },
+  "sam2_detector": {
+    "objects": 490,
+    "mean_iou": 0.6661,
+    "zone_accuracy": 0.9429,
+    "decisions_changed_vs_bbox": 43,
+    "ms_per_image": 173.3
+  }
+}

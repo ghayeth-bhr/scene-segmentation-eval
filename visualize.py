@@ -7,7 +7,7 @@ from collections import defaultdict
 import cv2
 import numpy as np
 
-from masks import ann_to_mask, decode
+from masks import ann_to_mask, decode, zone_pixels
 
 
 def main() -> None:
@@ -20,7 +20,7 @@ def main() -> None:
     a = ap.parse_args()
 
     coco = json.load(open(a.ann, encoding="utf-8"))
-    zone = np.array(json.load(open(a.zone, encoding="utf-8"))["zone"], dtype=np.int32)
+    zone_def = json.load(open(a.zone, encoding="utf-8"))["zone"]
     preds = defaultdict(list)
     for p in json.load(open(a.pred, encoding="utf-8"))["predictions"]:
         preds[p["file_name"]].append(p)
@@ -40,6 +40,7 @@ def main() -> None:
         for p in preds[im["file_name"]]:
             overlay[decode(p["segmentation"])] = (0, 0, 220)
         img = cv2.addWeighted(overlay, 0.45, img, 0.55, 0)
+        zone = np.array(zone_pixels(zone_def, h, w), dtype=np.int32)
         cv2.polylines(img, [zone], True, (220, 80, 0), 2)
         cv2.imwrite(os.path.join(a.out, im["file_name"]), img)
     print(f"wrote {len(coco['images'])} overlays to {a.out}/")

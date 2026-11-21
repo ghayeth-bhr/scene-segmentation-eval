@@ -41,24 +41,26 @@ pip install -r requirements.txt
 data/scene/
   images/            frame_0001.jpg ...
   annotations.json   COCO instances with polygon segmentation (e.g. exported from CVAT / Roboflow)
-  zone.json          {"zone": [[x1, y1], [x2, y2], ...]}   zone polygon in pixels
+  zone.json          {"zone": [[x1, y1], [x2, y2], ...]}   zone polygon, in pixels or relative (0-1) coordinates
 ```
 
 ## Usage
 
 ```bash
 # 1. Predictions (each writes predictions/<method>.json in COCO-RLE format)
-python predict_light.py --images data/scene/images --model yolo11n-seg.pt
+python tools/make_coco_scene.py --ann instances_val2017.json --out data/scene   # or your own scene
+python predict_light.py --images data/scene/images --model yolo11n-seg.pt --classes 0 2
 python predict_sam2.py  --images data/scene/images --ann data/scene/annotations.json \
-                        --checkpoint sam2.1_hiera_small.pt --config configs/sam2.1/sam2.1_hiera_s.yaml
+                        --checkpoint sam2.1_hiera_small.pt --box-source gt --out predictions/sam2_gt.json
+python predict_sam2.py  --images data/scene/images --ann data/scene/annotations.json                         --checkpoint sam2.1_hiera_small.pt --box-source detector --classes 0 2                         --out predictions/sam2_detector.json
 
 # 2. Evaluation: mask IoU + zone-decision agreement, bbox baseline included automatically
 python evaluate.py --ann data/scene/annotations.json --zone data/scene/zone.json \
-                   --pred predictions/yolo_seg.json predictions/sam2.json
+                   --pred predictions/yolo_seg.json predictions/sam2_gt.json predictions/sam2_detector.json
 
 # 3. Visual check of disagreements
 python visualize.py --images data/scene/images --ann data/scene/annotations.json \
-                    --zone data/scene/zone.json --pred predictions/sam2.json --out viz/
+                    --zone data/scene/zone.json --pred predictions/sam2_gt.json --out viz/
 ```
 
 SAM 2 is prompted with the ground-truth boxes by default (`--box-source gt`) to isolate
@@ -76,13 +78,33 @@ boxes and measure the full pipeline.
 
 ## Results
 
-Fill after running `evaluate.py` (it writes `results/summary.md`).
+**Setup:** 100 street scenes from COCO val2017 containing both people and cars
+(`tools/make_coco_scene.py`), 490 ground-truth objects (person + car, non-crowd, area ≥ 1000 px).
+Zone: a trapezoid over the lower-centre of each frame in relative coordinates
+`[[0.30,0.45],[0.70,0.45],[0.95,1.0],[0.05,1.0]]`, decision threshold 0.5.
+YOLO11n-seg (Ultralytics) and SAM 2.1 Hiera-S, both on an RTX 4050 Laptop GPU (PyTorch 2.14, CUDA 12.6).
+Timing = median per image (SAM 2: image encoding + mask decoding for all boxes of the image).
 
-| Method | Mean mask IoU | Zone decision accuracy | Decisions changed vs. bbox | Notes |
-|---|---|---|---|---|
-| bbox-only | | | — | |
-| YOLO-seg | | | | |
-| SAM 2 | | | | |
+| Method | Objects | Mean mask IoU | Zone decision accuracy | Decisions changed vs. bbox | ms / image |
+|---|---|---|---|---|---|
+| bbox-only (GT boxes) | 490 | 0.572 | 0.953 | — | — |
+| YOLO11n-seg | 490 | 0.656 | 0.943 | 37 | 37 |
+| SAM 2 + GT boxes | 490 | **0.820** | **0.990** | 26 | 168 |
+| SAM 2 + YOLO11n boxes | 490 | 0.666 | 0.943 | 43 | 173 (+ detector) |
+
+**What the numbers say**
+
+- **A box is a poor mask** (IoU 0.57) but a **good zone signal**: box-based zone logic already
+  takes the right in-zone decision for 95% of objects.
+- **SAM 2 fixes most of the remaining errors when it gets good boxes** (99.0%, IoU 0.82),
+  at ~4.5x the cost of YOLO11n-seg (26 decisions change compared with boxes; inspect them
+  with `visualize.py`).
+- **In a full pipeline, the detector is the bottleneck**: prompted with YOLO11n boxes, SAM 2
+  drops to the same zone accuracy as YOLO11n-seg (94.3%), because missed or merged detections
+  cannot be repaired by better masks.
+- Practical conclusion for an edge video-analytics system: keep box-based zone rules as the
+  default, and spend compute on segmentation only for borderline objects (box fraction in zone
+  close to the threshold), where it changes the decision.
 
 ## Project layout
 

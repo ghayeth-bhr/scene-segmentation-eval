@@ -3,6 +3,7 @@ import argparse
 import glob
 import json
 import os
+import time
 
 import cv2
 import numpy as np
@@ -21,11 +22,13 @@ def main() -> None:
 
     from ultralytics import YOLO
     model = YOLO(a.model)
-    preds = []
+    preds, times = [], []
     files = sorted(glob.glob(os.path.join(a.images, "*.jpg")) + glob.glob(os.path.join(a.images, "*.png")))
     for f in files:
         h, w = cv2.imread(f).shape[:2]
+        t0 = time.perf_counter()
         r = model.predict(f, conf=a.conf, classes=a.classes, retina_masks=True, verbose=False)[0]
+        times.append((time.perf_counter() - t0) * 1000)
         if r.masks is None:
             continue
         masks = r.masks.data.cpu().numpy() > 0.5          # [N, H, W] at original resolution
@@ -38,7 +41,9 @@ def main() -> None:
                           "bbox": [x1, y1, x2 - x1, y2 - y1], "segmentation": encode(m)})
     os.makedirs(os.path.dirname(a.out), exist_ok=True)
     with open(a.out, "w", encoding="utf-8") as fh:
-        json.dump({"method": "yolo_seg", "model": a.model, "predictions": preds}, fh)
+        json.dump({"method": "yolo_seg", "model": a.model,
+                   "ms_per_image": round(float(np.median(times[1:] or times)), 1) if times else None,
+                   "predictions": preds}, fh)
     print(f"{len(preds)} masks on {len(files)} images -> {a.out}")
 
 

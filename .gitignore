@@ -4,4 +4,6 @@ __pycache__/
 data/
 predictions/
 viz/
-results/
+results/*
+!results/summary.md
+!results/summary.json

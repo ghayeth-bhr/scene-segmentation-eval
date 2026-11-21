@@ -2,6 +2,7 @@
 import argparse
 import json
 import os
+import time
 from collections import defaultdict
 
 import cv2
@@ -21,12 +22,12 @@ def gt_boxes(ann_path: str) -> dict[str, list[tuple[list[float], int]]]:
     return out
 
 
-def detector_boxes(images: list[str], folder: str, model_path: str, conf: float):
+def detector_boxes(images: list[str], folder: str, model_path: str, conf: float, classes=None):
     from ultralytics import YOLO
     model = YOLO(model_path)
     out = defaultdict(list)
     for f in images:
-        r = model.predict(os.path.join(folder, f), conf=conf, verbose=False)[0]
+        r = model.predict(os.path.join(folder, f), conf=conf, classes=classes, verbose=False)[0]
         for box, cls in zip(r.boxes.xyxy.cpu().numpy(), r.boxes.cls.cpu().numpy()):
             out[f].append((box.tolist(), int(cls)))
     return out
@@ -41,6 +42,7 @@ def main() -> None:
     ap.add_argument("--box-source", choices=["gt", "detector"], default="gt")
     ap.add_argument("--detector", default="yolo11n.pt")
     ap.add_argument("--conf", type=float, default=0.25)
+    ap.add_argument("--classes", type=int, nargs="*", default=None, help="detector class ids to keep")
     ap.add_argument("--device", default="cuda")
     ap.add_argument("--out", default="predictions/sam2.json")
     a = ap.parse_args()
@@ -54,19 +56,23 @@ def main() -> None:
 
     boxes = gt_boxes(a.ann)
     if a.box_source == "detector":
-        boxes = detector_boxes(sorted(boxes), a.images, a.detector, a.conf)
+        boxes = detector_boxes(sorted(boxes), a.images, a.detector, a.conf, a.classes)
 
-    preds = []
+    preds, times = [], []
     with torch.inference_mode():
         for fname, items in sorted(boxes.items()):
             if not items:
                 continue
             img = cv2.cvtColor(cv2.imread(os.path.join(a.images, fname)), cv2.COLOR_BGR2RGB)
+            t0 = time.perf_counter()
             predictor.set_image(img)
             box_arr = np.array([b for b, _ in items], dtype=np.float32)
             masks, scores, _ = predictor.predict(box=box_arr, multimask_output=False)
             masks = masks.reshape(len(items), *img.shape[:2]) > 0
             scores = np.asarray(scores).reshape(len(items), -1)[:, 0]
+            if device == "cuda":
+                torch.cuda.synchronize()
+            times.append((time.perf_counter() - t0) * 1000)
             for (box, cls), m, s in zip(items, masks, scores):
                 x1, y1, x2, y2 = box
                 preds.append({"file_name": fname, "score": float(s), "class_id": cls,
@@ -75,6 +81,7 @@ def main() -> None:
     os.makedirs(os.path.dirname(a.out), exist_ok=True)
     with open(a.out, "w", encoding="utf-8") as fh:
         json.dump({"method": f"sam2_{a.box_source}", "model": os.path.basename(a.checkpoint),
+                   "ms_per_image": round(float(np.median(times[1:] or times)), 1) if times else None,
                    "predictions": preds}, fh)
     print(f"{len(preds)} masks -> {a.out} (device={device}, boxes={a.box_source})")
 

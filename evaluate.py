@@ -84,7 +84,7 @@ def main() -> None:
         coco = json.load(fh)
     with open(a.zone, encoding="utf-8") as fh:
         zone = json.load(fh)["zone"]
-    preds_by_method = {}
+    preds_by_method, ms = {}, {}
     for p in a.pred:
         with open(p, encoding="utf-8") as fh:
             d = json.load(fh)
@@ -92,13 +92,16 @@ def main() -> None:
         for x in d["predictions"]:
             by_img[x["file_name"]].append(x)
         preds_by_method[d["method"]] = by_img
+        ms[d["method"]] = d.get("ms_per_image")
 
     table = evaluate(coco, zone, preds_by_method, a.zone_thr)
-    lines = ["| Method | Objects | Mean mask IoU | Zone decision accuracy | Decisions changed vs. bbox |",
-             "|---|---|---|---|---|"]
+    lines = ["| Method | Objects | Mean mask IoU | Zone decision accuracy | Decisions changed vs. bbox | ms / image |",
+             "|---|---|---|---|---|---|"]
     for name, r in table.items():
         changed = "—" if r["decisions_changed_vs_bbox"] is None else r["decisions_changed_vs_bbox"]
-        lines.append(f'| {name} | {r["objects"]} | {r["mean_iou"]} | {r["zone_accuracy"]} | {changed} |')
+        r["ms_per_image"] = ms.get(name)
+        lines.append(f'| {name} | {r["objects"]} | {r["mean_iou"]} | {r["zone_accuracy"]} | {changed} | '
+                     f'{"-" if r["ms_per_image"] is None else r["ms_per_image"]} |')
     os.makedirs("results", exist_ok=True)
     with open("results/summary.md", "w", encoding="utf-8") as fh:
         fh.write("\n".join(lines) + "\n")
